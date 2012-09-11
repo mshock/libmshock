@@ -23,7 +23,7 @@ use File::Basename;
 
 # globals
 use constant REGEX_TRUE => qr/true|t|y|yes|1/i;
-our (%cli_args,$verbose,$log_handle);
+our (%cli_args,%cfg_opts,$verbose,$log_handle);
 # additional usage message customization hash
 # TODO: implement adding hash values to usage message
 our %usage_mod;
@@ -74,12 +74,12 @@ sub process_opts {
 	
 	my $conf_file = $cli_args{c} || "$self.conf";
 	
-	my ($cfg_opts,@cfg_other) = load_conf($conf_file)
+	load_conf($conf_file)
 		or warning('could not load config file, skipping (default mode)');
 	
 	usage() if $cli_args{h} || $ARGV[0];
-	$verbose = $cli_args{v} || $cfg_opts->{verbose} =~ REGEX_TRUE;
-	my $logfile_path = $cli_args{l} || $cfg_opts->{log_path} || "$self.log";
+	$verbose = $cli_args{v} || $cfg_opts{verbose} =~ REGEX_TRUE;
+	my $logfile_path = $cli_args{l} || $cfg_opts{log_path} || "$self.log";
 	
 	# default mode will be to open logs in append mode
 	load_log({
@@ -130,17 +130,16 @@ sub load_log {
 	return tell($log_handle) != -1 ? 1 : 0;
 }
 
-
-# load basic settings from configurations file
-# all conf files will have an [options] block
+# load configurations from conf file to hash
+# args: conf file path, output conf file hash ref
 sub load_conf {
-	my ($conf_file) = @_;
+	my ($conf_file, $cfg_href) = @_;
 	
 	my $cfg = new Config::Simple($conf_file)
-		or error('could not load configs')
-		and return 0; 
-	my $cfg_opts = $cfg->get_block('options')
-		or warning('could not find [options] block in configs');
+		or error('could not load config file: ' . $conf_file);
+	
+	%{$cfg_href} = $cfg->vars()
+		or warning('problem loading config file values into hash');	
 }
 
 # standard warning message
@@ -209,6 +208,10 @@ sub vprint {
 			carp $msg;
 		}
 		case 3 {
+			croak $msg;
+		}
+		case {$level > 3} {
+			print "Hold on to your butts!\n";
 			croak $msg;
 		}
 		else {
