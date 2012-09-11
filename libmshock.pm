@@ -12,7 +12,7 @@ use strict;
 require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning sub_opt);
-our @EXPORT_OK = qw(get_self);
+our @EXPORT_OK = qw(get_self id_ref);
 
 use Getopt::Std;
 use Config::Simple ('-lc');	# ignore case for config keys
@@ -94,7 +94,19 @@ sub load_success {
 	print "libmshock loaded successfully!\n";
 }
 
-
+# compares a variable reference against a Perl reftype (see docs for list)
+# no type arg: return ref type (empty string if none)
+# otherwise compare ref against type, return bool
+sub id_ref {
+	my ($ref, $type) = @_;
+	my $ref_type = ref($ref);
+	# no args, return type
+	if (! defined $type) {
+		return $ref_type;
+	}
+	# compare types
+	return uc $ref_type eq uc $type; 
+}
 
 # check if called directly from CLI or imported
 # (intended for use in utility Perl modules)
