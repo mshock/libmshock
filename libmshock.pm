@@ -14,6 +14,8 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning sub_opt);
 our @EXPORT_OK = qw(get_self id_ref);
 
+use Carp;
+use Switch;
 use Getopt::Std;
 use Config::Simple ('-lc');	# ignore case for config keys
 use File::Basename;
@@ -45,6 +47,8 @@ run_harness();
 # always runs at module load/call
 # TODO: load module configs from conf file (if any)
 sub run_harness {
+	load_conf('libmshock.conf')
+		or warn("could not load libmshock config file, using all default configs\n");
 	if (calling_self()) {
 		# execute default behavior here when called from CLI
 		pm_usage();
@@ -143,7 +147,7 @@ sub load_conf {
 # notification that feature failed to load, not fatal
 sub warning {
 	my ($msg) = @_;
-	vprint("[warning]\t$msg\n");
+	vprint("[warning]\t$msg\n",1);
 }
 
 # standard error (not STDERR) message
@@ -151,7 +155,15 @@ sub warning {
 # prints $! error var for debug
 sub error {
 	my ($msg) = @_;
-	vprint("[ error ]\t$msg: $!\n");
+	carp $msg;
+	vprint("[ error ]\t$msg: $!\n",2);
+}
+
+# standard croak (die), but also writes to log first
+# useful for debugging, but may come in handy elsewhere
+sub fatal {
+	my ($msg) = @_;
+	vprint("[ fatal ]\t$msg: $!\n",3);
 }
 
 # get the basename of the calling script
@@ -180,14 +192,29 @@ sub sub_opt {
 
 
 # improved print sub for logging and verbosity
-# TODO: add verbosity levels
+# optional level for debugging
 sub vprint {
-	my ($msg) = @_;
+	my ($msg, $level) = @_;
 	
 	# only print to the log if the handle is legit
 	print $log_handle $msg if tell($log_handle) >= 0;
 	# only print to STDOUT if verbose mode enabled
-	print $msg if $verbose; 
+	
+	# handle level of message (not to be confused with verbosity)
+	switch($level) {
+		case 1 {
+			carp $msg if $verbose;			
+		}
+		case 2 {
+			carp $msg;
+		}
+		case 3 {
+			croak $msg;
+		}
+		else {
+			print $msg if $verbose;
+		}
+	}
 }
 
 # returns true if arg is a . or .. file
