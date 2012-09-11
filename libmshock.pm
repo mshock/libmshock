@@ -6,17 +6,18 @@
 # TODO: research converting messages to Carp module
 package mshock;
 
-require Exporter;
-
 use strict;
+
+# export some useful stuff (or not)
+require Exporter;
+our @ISA = qw(Exporter);
+our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning sub_opt);
+our @EXPORT_OK = qw(get_self);
+
 use Getopt::Std;
 use Config::Simple ('-lc');	# ignore case for config keys
 use File::Basename;
 
-# export some useful stuff (or not)
-our @ISA = qw(Exporter);
-our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning);
-our @EXPORT_OK = qw(get_self);
 
 # globals
 use constant REGEX_TRUE => qr/true|t|y|yes|1/i;
@@ -24,6 +25,9 @@ our (%cli_args,$verbose,$log_handle);
 # additional usage message customization hash
 # TODO: implement adding hash values to usage message
 our %usage_mod;
+
+# catch if module is run directly from CLI
+run_harness();
 
 # automatically process options from CLI and/or config file
 #process_opts()
@@ -37,6 +41,14 @@ our %usage_mod;
 #	begin subs	
 #
 #########################################
+
+# run if module is executed from CLI
+sub run_harness {
+	if (calling_self()) {
+		# execute default behavior here
+		pm_usage();
+	}
+}
 
 # processs generic command line options
 # (verbose and help/usage)
@@ -70,6 +82,12 @@ sub process_opts {
 	return 1;
 }
 
+
+# check if called directly from CLI or imported
+# (intended for use in utility Perl modules)
+sub calling_self {
+	return (caller)[0] !~ m/main/;
+}
 
 
 # load / create default log
@@ -123,6 +141,19 @@ sub get_self {
 	return $name;
 }
 
+# processes arguments passed to subroutine in hashref
+# either returns hash value for key or 0
+# TODO: rewrite this whole module to use this sub
+sub sub_opt {
+	my ($href, $opt) = @_;
+	
+	error("bad options hashref $href") if ref($href) ne 'HASH';
+	warning("no option passed to sub_opt()") if !$opt; 
+	
+	return exists $href->{$opt} ? $href->{$opt} : 0;
+}
+
+
 # improved print sub for logging and verbosity
 # TODO: add verbosity levels
 sub vprint {
@@ -159,5 +190,12 @@ usage:	$self.pl [hvl$
 	exit($cli_args{h}?0:1);
 }
 
-
-
+# usage statement for the module itself
+# TODO: integrate with generic usage sub
+sub pm_usage {
+	die "
+libmshock.pm called directly rather than imported
+you should be using this as a Perl module, silly
+stay tuned for direct call functionality
+";
+}
