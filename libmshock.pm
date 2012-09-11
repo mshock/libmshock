@@ -4,7 +4,7 @@
 # containing many useful subroutines
 # and possibly some less useful ones
 # TODO: research converting messages to Carp module
-package mshock;
+package libmshock;
 
 use strict;
 
@@ -42,11 +42,16 @@ run_harness();
 #
 #########################################
 
-# run if module is executed from CLI
+# always runs at module load/call
+# TODO: load module configs from conf file (if any)
 sub run_harness {
 	if (calling_self()) {
-		# execute default behavior here
+		# execute default behavior here when called from CLI
 		pm_usage();
+	}
+	else {
+		# report module load success if being used
+		load_success();
 	}
 }
 
@@ -81,6 +86,14 @@ sub process_opts {
 	
 	return 1;
 }
+
+# executes when module loads successfully when imported into another
+# TODO: some way to disable this (verbosity?)
+# TODO: actually check that all functionality is working
+sub load_success {
+	print "libmshock loaded successfully!\n";
+}
+
 
 
 # check if called directly from CLI or imported
@@ -193,7 +206,7 @@ usage:	$self.pl [hvl$
 # usage statement for the module itself
 # TODO: integrate with generic usage sub
 sub pm_usage {
-	die "
+	print "
 libmshock.pm called directly rather than imported
 you should be using this as a Perl module, silly
 stay tuned for direct call functionality
