@@ -178,6 +178,12 @@ sub vprint {
 	print $msg if $verbose; 
 }
 
+# returns true if arg is a . or .. file
+# useful for filetree traversal loops (and more legible)
+sub dot {
+	return shift =~ /^\.+$/;
+}
+
 # release log filehandle
 # and all fhs in arrayref of handles
 sub cleanup {
