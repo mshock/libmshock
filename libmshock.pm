@@ -3,8 +3,12 @@
 # my very own perl module
 # containing many useful subroutines
 # and possibly some less useful ones
-# TODO: research converting messages to Carp module
+# TODO: look into using Config::Param to replace Getopt::Std & Config::Simple
+# TODO: add Pod::Usage documentation of module, usage() can be for callers
 package libmshock;
+
+# must support an elderly version of ActivePerl
+use 5.010_000;
 
 use strict;
 
@@ -12,21 +16,26 @@ use strict;
 require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning sub_opt);
-our @EXPORT_OK = qw(get_self id_ref);
+our @EXPORT_OK = qw(get_self id_ref create_file dot);
 
 use Carp;
 use Switch;
-use Getopt::Std;
+use Getopt::Std qw(getopts);
 use Config::Simple ('-lc');	# ignore case for config keys
-use File::Basename;
+use File::Basename qw(basename);
 
 
-# globals
+###########################################
+#	globals
+###########################################
+# constants
 use constant REGEX_TRUE => qr/true|t|y|yes|1/i;
-our (%cli_args,%cfg_opts,$verbose,$log_handle);
-# additional usage message customization hash
-# TODO: implement adding hash values to usage message
-our %usage_mod;
+# globals for use in calling script
+our (%cli_args,%cfg_opts,$verbose,$log_handle, $die_msg);
+# internal globals
+my (%lib_opts);
+
+
 
 # catch if module is run directly from CLI
 run_harness();
@@ -47,8 +56,15 @@ run_harness();
 # always runs at module load/call
 # TODO: load module configs from conf file (if any)
 sub run_harness {
-	load_conf('libmshock.conf')
-		or warn("could not load libmshock config file, using all default configs\n");
+	
+	# load configfile for this module itself
+	%lib_opts = %{load_conf('libmshock.conf')}
+		or warn("could not load libmshock.conf config file, using all default configs\n");
+	
+	# initialize some additional behaviors for interrupts
+	signal_hooks();
+	
+	# check if called from CLI or used	
 	if (calling_self()) {
 		# execute default behavior here when called from CLI
 		pm_usage();
@@ -64,17 +80,17 @@ sub run_harness {
 # only argument is extra flags
 # TODO: add simple mode which turns off complaints about CLI or configs if not in use
 sub process_opts {
-	my ($opts) = @_;
+	my ($caller_opts) = @_;
 	
 	# get script filename minus extension
 	my $self = get_self();
 	
 	# load CLI options, defaults and caller-specified
-	getopts('vhl'.$opts, \%cli_args);
+	getopts('vhl'.$caller_opts, \%cli_args);
 	
 	my $conf_file = $cli_args{c} || "$self.conf";
 	
-	load_conf($conf_file)
+	%cfg_opts = %{load_conf($conf_file)}
 		or warning('could not load config file, skipping (default mode)');
 	
 	usage() if $cli_args{h} || $ARGV[0];
@@ -115,6 +131,7 @@ sub id_ref {
 # check if called directly from CLI or imported
 # (intended for use in utility Perl modules)
 sub calling_self {
+	#print ((caller)[0]);
 	return (caller)[0] !~ m/main/;
 }
 
@@ -135,11 +152,42 @@ sub load_log {
 sub load_conf {
 	my ($conf_file, $cfg_href) = @_;
 	
-	my $cfg = new Config::Simple($conf_file)
-		or error('could not load config file: ' . $conf_file);
+	# if no conf file, create one if create_config enabled in libmshock.conf
+	if ((! -f $conf_file) && $lib_opts{create_conf}) {
+		create_file($conf_file, ("# this is a template configuration file\n# hash (#) or semi-colon (;) denotes commented line"))
+			or error("failed to create configuration file: $conf_file")
+			and return 0;
+	}
 	
-	%{$cfg_href} = $cfg->vars()
-		or warning('problem loading config file values into hash');	
+	my $cfg = new Config::Simple($conf_file)
+		or error("could not load config file: $conf_file")
+		and return 0;
+	
+	$cfg_href = $cfg->vars()
+		or warning('problem loading config file values into hash: '. $cfg->error());
+		
+	return $cfg_href;
+}
+
+# creates an empty file
+# optional list argument for initial contents
+# returns false or filehandle to new file
+sub create_file {
+	my ($file, @opt_lines) = @_;
+	
+	# verify not overwriting a file
+	if (-f $file) {
+		warning("create_file() cannot create a file that already exists (aborting): $file");
+		return 0;
+	}
+	# create file and write optional initial lines
+	open (my $fh ,'+>', $file)
+		or error("could not create file for read/write: $file")
+		and return 0;
+	# TODO: is this the most efficient way to do this? just curious...
+	print $fh join "\n", @opt_lines;
+	
+	return $fh;
 }
 
 # standard warning message
@@ -164,6 +212,37 @@ sub fatal {
 	my ($msg) = @_;
 	vprint("[ fatal ]\t$msg: $!\n",3);
 }
+
+# improved print sub for logging and verbosity
+# optional level for debugging
+sub vprint {
+	my ($msg, $level) = @_;
+	
+	# only print to the log if the handle is legit
+	print $log_handle $msg if defined $log_handle && tell($log_handle) >= 0;
+	# only print to STDOUT if verbose mode enabled
+	
+	# handle level of message (not to be confused with verbosity)
+	switch($level) {
+		case 1 {
+			carp "\n$msg\n" if $verbose;			
+		}
+		case 2 {
+			carp "\n$msg\n";
+		}
+		case 3 {
+			croak "\n$msg\n";
+		}
+		case {$level > 3} {
+			warn "\n\nhold on to your butts!\n\n";
+			croak "\n$msg\n";
+		}
+		else {
+			print "\n$msg\n" if $verbose;
+		}
+	}
+}
+
 
 # get the basename of the calling script
 # options hash:
@@ -190,35 +269,6 @@ sub sub_opt {
 }
 
 
-# improved print sub for logging and verbosity
-# optional level for debugging
-sub vprint {
-	my ($msg, $level) = @_;
-	
-	# only print to the log if the handle is legit
-	print $log_handle $msg if tell($log_handle) >= 0;
-	# only print to STDOUT if verbose mode enabled
-	
-	# handle level of message (not to be confused with verbosity)
-	switch($level) {
-		case 1 {
-			carp $msg if $verbose;			
-		}
-		case 2 {
-			carp $msg;
-		}
-		case 3 {
-			croak $msg;
-		}
-		case {$level > 3} {
-			print "Hold on to your butts!\n";
-			croak $msg;
-		}
-		else {
-			print $msg if $verbose;
-		}
-	}
-}
 
 # returns true if arg is a . or .. file
 # useful for filetree traversal loops (and more legible)
@@ -240,7 +290,7 @@ sub cleanup {
 
 # print usage/help statement
 # intelligently handle exit code
-# TODO: add user options and docs
+# TODO: add caller configs to usage
 sub usage {
 	my $self = get_self();
 	print "
@@ -259,4 +309,18 @@ libmshock.pm called directly rather than imported
 you should be using this as a Perl module, silly
 stay tuned for direct call functionality
 ";
+}
+
+# overwrite signals to execute custom functionality
+# usually carp before (likely) releasing to original handler
+sub signal_hooks {	
+	# interrupt signal (control-C)
+	$SIG{INT} = \&INT_CONFESS;
+}
+
+# custom handler for SIG{INT}
+sub INT_CONFESS {
+	# portable && paranoid
+	$SIG{INT} = \&INT_CONFESS;
+	confess "libmshock.pm caught interrupt, stack backtracing...\n";	
 }
