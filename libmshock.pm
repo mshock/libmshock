@@ -8,7 +8,7 @@
 package libmshock;
 
 # must support an elderly version of ActivePerl
-#use 5.010_000;
+use 5.010_000;
 
 use strict;
 
@@ -239,8 +239,8 @@ sub vprint {
 	# only print to STDOUT if verbose mode enabled
 	
 	# handle level of message (not to be confused with verbosity)
-	# fake switch statement
-	if (!$level) {print "\n$msg\n" if $verbose;}
+	# fake switch statement (Switch is deprecated)
+	if (!$level) {print "\n$msg\n" if $verbose}
 	elsif ($level == 1) {carp "\n$msg\n" if $verbose}
 	elsif ($level == 2) {carp "\n$msg\n"}
 	elsif ($level == 3) {croak "\n$msg\n"}
