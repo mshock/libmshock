@@ -8,7 +8,7 @@
 package libmshock;
 
 # must support an elderly version of ActivePerl
-use 5.010_000;
+#use 5.010_000;
 
 use strict;
 
@@ -19,7 +19,6 @@ our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning sub_opt call
 our @EXPORT_OK = qw(get_self id_ref create_file dot print_href);
 
 use Carp;
-use Switch;
 use Getopt::Std qw(getopts);
 use Config::Simple ('-lc');	# ignore case for config keys
 use File::Basename qw(basename);
@@ -240,24 +239,13 @@ sub vprint {
 	# only print to STDOUT if verbose mode enabled
 	
 	# handle level of message (not to be confused with verbosity)
-	switch($level) {
-		case 1 {
-			carp "\n$msg\n" if $verbose;			
-		}
-		case 2 {
-			carp "\n$msg\n";
-		}
-		case 3 {
-			croak "\n$msg\n";
-		}
-		case {$level > 3} {
-			warn "\n\nhold on to your butts!\n\n";
-			croak "\n$msg\n";
-		}
-		else {
-			print "\n$msg\n" if $verbose;
-		}
-	}
+	# fake switch statement
+	if (!$level) {print "\n$msg\n" if $verbose;}
+	elsif ($level == 1) {carp "\n$msg\n" if $verbose}
+	elsif ($level == 2) {carp "\n$msg\n"}
+	elsif ($level == 3) {croak "\n$msg\n"}
+	else {warn "\n\nhold on to your butts!\n\n" and croak "\n$msg\n"};
+	
 }
 
 
