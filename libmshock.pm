@@ -15,8 +15,8 @@ use strict;
 # export some useful stuff (or not)
 require Exporter;
 our @ISA = qw(Exporter);
-our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning sub_opt);
-our @EXPORT_OK = qw(get_self id_ref create_file dot);
+our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning sub_opt calling_self);
+our @EXPORT_OK = qw(get_self id_ref create_file dot print_href);
 
 use Carp;
 use Switch;
@@ -35,10 +35,9 @@ our (%cli_args,%cfg_opts,$verbose,$log_handle, $die_msg);
 # internal globals
 my (%lib_opts);
 
-
-
-# catch if module is run directly from CLI
-run_harness();
+# perform basic initialization tasks
+# use caller to determine if called directly or included as module
+init(caller);
 
 # automatically process options from CLI and/or config file
 #process_opts()
@@ -55,24 +54,33 @@ run_harness();
 
 # always runs at module load/call
 # TODO: load module configs from conf file (if any)
-sub run_harness {
+sub init {
+	my ($caller_flag) = @_;
 	
-	# load configfile for this module itself
+	# load config file for the module itself
 	%lib_opts = %{load_conf('libmshock.conf')}
-		or warn("could not load libmshock.conf config file, using all default configs\n");
+		or warn("could not load libmshock.conf config file - using all default configs\n");
+	
 	
 	# initialize some additional behaviors for interrupts
 	signal_hooks();
-	
-	# check if called from CLI or used	
-	if (calling_self()) {
+		
+	# check if called from CLI or used as a module
+	unless ($caller_flag) {
 		# execute default behavior here when called from CLI
+		run();
+		# module usage message (not to be confused with extensible usage sub)
 		pm_usage();
 	}
 	else {
 		# report module load success if being used
 		load_success();
 	}
+}
+
+# run this code when script is called directly
+sub run {
+	print "this is the default run() code\n";
 }
 
 # processs generic command line options
@@ -128,14 +136,6 @@ sub id_ref {
 	return uc $ref_type eq uc $type; 
 }
 
-# check if called directly from CLI or imported
-# (intended for use in utility Perl modules)
-sub calling_self {
-	#print ((caller)[0]);
-	return (caller)[0] !~ m/main/;
-}
-
-
 # load / create default log
 # returns true on success
 sub load_log {
@@ -162,11 +162,28 @@ sub load_conf {
 	my $cfg = new Config::Simple($conf_file)
 		or error("could not load config file: $conf_file")
 		and return 0;
-	
+
+	# simplified ini file, all variables under default block	
 	$cfg_href = $cfg->vars()
 		or warning('problem loading config file values into hash: '. $cfg->error());
-		
+	
 	return $cfg_href;
+}
+
+# simple hash dump utility/debug function
+# basic sorting functionality (as sub ref)
+# TODO: how is performance on large hashes? possible improvements?
+sub print_href {
+	my ($href, $sort, $sort_func) = @_;
+	
+	# get hash keys
+	my @keys = keys %{$href};
+	$sort_func = sub {$a cmp $b} if !$sort_func;
+	@keys = sort $sort_func @keys if $sort;
+	
+	for my $key (@keys) {
+		print "$key: ", $href->{$key}, "\n";
+	}	
 }
 
 # creates an empty file
@@ -315,7 +332,7 @@ stay tuned for direct call functionality
 # usually carp before (likely) releasing to original handler
 sub signal_hooks {	
 	# interrupt signal (control-C)
-	$SIG{INT} = \&INT_CONFESS;
+	$SIG{INT} = \&INT_CONFESS if $lib_opts{'default.confess_int'};
 }
 
 # custom handler for SIG{INT}
