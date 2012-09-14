@@ -15,10 +15,11 @@ use strict;
 # export some useful stuff (or not)
 require Exporter;
 our @ISA = qw(Exporter);
-our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning sub_opt calling_self);
+our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning calling_self);
 our @EXPORT_OK = qw(get_self id_ref create_file dot print_href);
 
 use Carp;
+use Params::Check qw(check);
 use Getopt::Std qw(getopts);
 use Config::Simple ('-lc');	# ignore case for config keys
 use File::Basename qw(basename);
@@ -173,15 +174,22 @@ sub load_conf {
 # basic sorting functionality (as sub ref)
 # TODO: how is performance on large hashes? possible improvements?
 sub print_href {
-	my ($href, $sort, $sort_func) = @_;
+	my ($href, $sort, $sort_func);
+	
+	my $tmpl = {
+		hashref	=> { required => 1, default => {}, defined => 1, strict_type => 1, store => \$href },
+		enable_sort => {default => 0, defined => 1, strict_type => 1, store => \$sort},
+		sort_func => {default => sub {$a cmp $b}, defined => 1 , strict_type => 1, store => \$sort_func} 
+	};
+	check($tmpl,shift,$verbose)
+		or warning('print_href() arg check failed: ' . Params::Check::last_error());
 	
 	# get hash keys
 	my @keys = keys %{$href};
-	$sort_func = sub {$a cmp $b} if !$sort_func;
 	@keys = sort $sort_func @keys if $sort;
 	
 	for my $key (@keys) {
-		print "$key: ", $href->{$key}, "\n";
+		print "$key => ", $href->{$key}, "\n";
 	}	
 }
 
@@ -260,20 +268,6 @@ sub get_self {
 	($name =~ s/\.p[lm]//i) if $strip_ext;
 	return $name;
 }
-
-# processes arguments passed to subroutine in hashref
-# either returns hash value for key or 0
-# TODO: rewrite this whole module to use this sub
-sub sub_opt {
-	my ($href, $opt) = @_;
-	
-	error("bad options hashref $href") if ref($href) ne 'HASH';
-	warning("no option passed to sub_opt()") if !$opt; 
-	
-	return exists $href->{$opt} ? $href->{$opt} : 0;
-}
-
-
 
 # returns true if arg is a . or .. file
 # useful for filetree traversal loops (and more legible)
