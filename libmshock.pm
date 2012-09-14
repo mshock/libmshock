@@ -230,7 +230,6 @@ sub warning {
 # prints $! error var for debug
 sub error {
 	my ($msg) = @_;
-	carp $msg;
 	vprint("[ error ]\t$msg: $!\n",2);
 }
 
