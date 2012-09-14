@@ -90,6 +90,8 @@ sub run {
 sub process_opts {
 	my ($caller_opts) = @_;
 	
+	
+	
 	# get script filename minus extension
 	my $self = get_self();
 	
@@ -166,6 +168,8 @@ sub load_conf {
 	# simplified ini file, all variables under default block	
 	$cfg_href = $cfg->vars()
 		or warning('problem loading config file values into hash: '. $cfg->error());
+	
+	print_href({hashref => $cfg_href});
 	
 	return $cfg_href;
 }
@@ -258,14 +262,11 @@ sub vprint {
 
 
 # get the basename of the calling script
-# options hash:
-#	STRIP_EXT => remove .pl or .pm (default is true)
 # TODO: add more options (various path components)
 sub get_self {
-	my ($opts) = @_;
-	my $strip_ext = $opts->{STRIP_EXT} !~ REGEX_TRUE;
+	my ($strip_extension) = @_;
 	my $name = basename($0);
-	($name =~ s/\.p[lm]//i) if $strip_ext;
+	($name =~ s/\.p[lm]//i) if $strip_extension !~ REGEX_TRUE;
 	return $name;
 }
 
@@ -278,10 +279,16 @@ sub dot {
 # release log filehandle
 # and all fhs in arrayref of handles
 sub cleanup {
-	my ($filehandles_aref) = @_;
+	my ($fhs_aref);
 
-	for my $filehandle (@{$filehandles_aref}) {
-	 	 close $filehandle if $filehandle; 
+	my $tmpl = {
+		filehandles => {default => [], defined => 1, strict_type => 1, store => \$fhs_aref}
+	};
+	check($tmpl, shift, $verbose)
+		or warning('cleanup() arg check failed: ' . Params::Check::last_error());
+
+	for my $filehandle (@{$fhs_aref}) {
+	 	 close $filehandle; 
 	}
 
 	close $log_handle if $log_handle;	
@@ -289,7 +296,7 @@ sub cleanup {
 
 # print usage/help statement
 # intelligently handle exit code
-# TODO: add caller configs to usage
+# TODO: use Pod::Usage
 sub usage {
 	my $self = get_self();
 	print "
@@ -301,7 +308,6 @@ usage:	$self.pl [hvl$
 }
 
 # usage statement for the module itself
-# TODO: integrate with generic usage sub
 sub pm_usage {
 	print "
 libmshock.pm called directly rather than imported
