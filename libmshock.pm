@@ -12,24 +12,40 @@ use 5.010_000;
 
 use strict;
 
+# absolute path of the module and library config
+my ($MODULE_PATH, $CONF_PATH);
+# BEGIN block for handling pre-execution tasks
+BEGIN {
+	# get absolute path of the module
+	# INV: reports of __FILE__ not being very portable?
+	$MODULE_PATH = __FILE__;
+	
+	# swap extension for config file path
+	($CONF_PATH = $MODULE_PATH) =~ s/pm$/conf/;
+}
+
 # export some useful stuff (or not)
 require Exporter;
 our @ISA = qw(Exporter);
-our @EXPORT = qw(process_opts vprint usage REGEX_TRUE error warning calling_self);
-our @EXPORT_OK = qw(get_self id_ref create_file dot print_href);
+our @EXPORT = qw(process_opts vprint REGEX_TRUE error warning);
+our @EXPORT_OK = qw(get_self id_ref create_file dot print_href CONF_PATH MOD_PATH);
 
 use Carp;
 use Params::Check qw(check);
 use Getopt::Std qw(getopts);
-use Config::Simple ('-lc');	# ignore case for config keys
-use File::Basename qw(basename);
+use Config::General;
+#use File::Basename qw(basename);
 
 
 ###########################################
 #	globals
 ###########################################
-# constants
-use constant REGEX_TRUE => qr/true|t|y|yes|1/i;
+# handy constants
+use constant {
+	REGEX_TRUE => qr/true|t|y|yes|1/i,
+	MOD_PATH => $MODULE_PATH,
+	CONF_PATH => $CONF_PATH,
+};
 # globals for use in calling script
 our (%cli_args,%cfg_opts,$verbose,$log_handle, $die_msg);
 # internal globals
@@ -38,10 +54,6 @@ my (%lib_opts);
 # perform basic initialization tasks
 # use caller to determine if called directly or included as module
 init(caller);
-
-# automatically process options from CLI and/or config file
-#process_opts()
-#	or warning('there was a problem loading your configs');
 
 # be a good package and return true
 1;
@@ -58,9 +70,8 @@ sub init {
 	my ($caller_flag) = @_;
 	
 	# load config file for the module itself
-	%lib_opts = %{load_conf('libmshock.conf')}
+	%lib_opts = %{load_conf(CONF_PATH)}
 		or warn("could not load libmshock.conf config file - using all default configs\n");
-	
 	
 	# initialize some additional behaviors for interrupts
 	signal_hooks();
@@ -161,15 +172,21 @@ sub load_conf {
 			and return 0;
 	}
 	
-	my $cfg = new Config::Simple($conf_file)
+	my $cfg = new Config::General( (
+		-ConfigFile => $conf_file,
+		-IncludeRelative => 1,
+		-LowerCaseNames => 1,
+		
+	))
 		or error("could not load config file: $conf_file")
 		and return 0;
 
 	# simplified ini file, all variables under default block	
-	$cfg_href = $cfg->vars()
-		or warning('problem loading config file values into hash: '. $cfg->error());
+	%{$cfg_href} = $cfg->getall
+		or warning("problem loading config file values into hash: $!");
 	
-	print_href({hashref => $cfg_href});
+	# dump conf key pairs (testing)
+	#print_href({hashref => $cfg_href});
 	
 	return $cfg_href;
 }
@@ -327,4 +344,9 @@ sub INT_CONFESS {
 	# portable && paranoid
 	$SIG{INT} = \&INT_CONFESS;
 	confess "libmshock.pm caught interrupt, stack backtracing...\n";	
+}
+
+# release all resources on unload here
+END {
+	print "\nlibmshock unloading!\n";
 }
