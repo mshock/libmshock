@@ -132,7 +132,7 @@ sub process_opts {
 # TODO: some way to disable this (verbosity?)
 # TODO: actually check that all functionality is working
 sub load_success {
-	print "libmshock loaded successfully!\n";
+	print "libmshock.pm loaded successfully!\n";
 }
 
 # compares a variable reference against a Perl reftype (see docs for list)
@@ -348,5 +348,5 @@ sub INT_CONFESS {
 
 # release all resources on unload here
 END {
-	print "\nlibmshock unloading!\n";
+	print "\nlibmshock.pm unloading!\n";
 }
