@@ -12,17 +12,16 @@ use 5.010_000;
 
 use strict;
 
-# absolute path of the module and library config
+# variables that will become constants
 my ($MODULE_PATH, $CONF_PATH);
-# BEGIN block for handling pre-execution tasks
+
+# BEGIN block for beating constant declarations to the compile-time punch
 BEGIN {
-	# get absolute path of the module
-	# INV: reports of __FILE__ not being very portable?
-	$MODULE_PATH = __FILE__;
-	
+# absolute path of the module and library config
 	# swap extension for config file path
-	($CONF_PATH = $MODULE_PATH) =~ s/pm$/conf/;
+	($CONF_PATH = __FILE__) =~ s/pm$/conf/;
 }
+
 
 # export some useful stuff (or not)
 require Exporter;
@@ -34,7 +33,7 @@ use Carp;
 use Params::Check qw(check);
 use Getopt::Std qw(getopts);
 use Config::General;
-#use File::Basename qw(basename);
+use File::Basename qw(basename);
 
 
 ###########################################
@@ -43,9 +42,10 @@ use Config::General;
 # handy constants
 use constant {
 	REGEX_TRUE => qr/true|t|y|yes|1/i,
-	MOD_PATH => $MODULE_PATH,
+	MOD_PATH => __FILE__,
 	CONF_PATH => $CONF_PATH,
 };
+
 # globals for use in calling script
 our (%cli_args,%cfg_opts,$verbose,$log_handle, $die_msg);
 # internal globals
