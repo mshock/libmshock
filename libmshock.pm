@@ -12,14 +12,9 @@ use 5.010_000;
 
 use strict;
 
-# variables that will become constants
-my ($MODULE_PATH, $CONF_PATH);
-
-# BEGIN block for beating constant declarations to the compile-time punch
+# execute compile-time code here
 BEGIN {
-# absolute path of the module and library config
-	# swap extension for config file path
-	($CONF_PATH = __FILE__) =~ s/pm$/conf/;
+	print "starting up libmshock.pm BEGIN block\n";
 }
 
 
@@ -43,7 +38,10 @@ use File::Basename qw(basename);
 use constant {
 	REGEX_TRUE => qr/true|t|y|yes|1/i,
 	MOD_PATH => __FILE__,
-	CONF_PATH => $CONF_PATH,
+	# sorta clever initialization of config file path constant ^_^
+	# newer (5.13.4+) Perl versions can avoid a do{...} block:
+	# 	CONF_PATH => (__FILE__ =~ s/pm$/conf/ir),
+	CONF_PATH => do {$_ = __FILE__; s/pm$/conf/i; $_ },
 };
 
 # globals for use in calling script
