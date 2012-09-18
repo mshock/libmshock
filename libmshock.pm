@@ -12,12 +12,6 @@ use 5.010_000;
 
 use strict;
 
-# execute compile-time code here
-BEGIN {
-	print "starting up libmshock.pm BEGIN block\n";
-}
-
-
 # export some useful stuff (or not)
 require Exporter;
 our @ISA = qw(Exporter);
@@ -46,6 +40,8 @@ use constant {
 
 # globals for use in calling script
 our (%cli_args,%cfg_opts,$verbose,$log_handle, $die_msg);
+# implement AUTOLOAD
+our $AUTOLOAD;
 # internal globals
 my (%lib_opts);
 
@@ -87,9 +83,24 @@ sub init {
 	}
 }
 
-# run this code when script is called directly
+# run this code when module is called directly from CLI
 sub run {
 	print "this is the default run() code\n";
+}
+
+# object constructor for calling script
+sub new {
+	# create new libmshock object
+	my ($this, @params) = @_;
+	my $class = ref($this) || $this;
+	
+	# default opts for object
+	my $self = {};
+	
+	# create the class instance
+	bless $self, $class;
+	
+	return $self;
 }
 
 # processs generic command line options
@@ -99,8 +110,6 @@ sub run {
 sub process_opts {
 	my ($caller_opts) = @_;
 	
-	
-	
 	# get script filename minus extension
 	my $self = get_self();
 	
@@ -109,6 +118,7 @@ sub process_opts {
 	
 	my $conf_file = $cli_args{c} || "$self.conf";
 	
+	# load caller script's config file options
 	%cfg_opts = %{load_conf($conf_file)}
 		or warning('could not load config file, skipping (default mode)');
 	
@@ -344,7 +354,79 @@ sub INT_CONFESS {
 	confess "libmshock.pm caught interrupt, stack backtracing...\n";	
 }
 
-# release all resources on unload here
-END {
-	print "\nlibmshock.pm unloading!\n";
+# catch undefined sub calls
+sub AUTOLOAD {
+	
 }
+
+# release all resources
+sub DESTROY {
+	
+}
+
+# end script, begin POD
+__END__
+
+=head1 NAME
+
+libmshock - mshock's library of more-or-less handy Perl functions
+
+=head1 SYNOPSIS
+	
+	# import into script:
+	use libmshock;
+	my $libmshock = libmshock->new(\%opts);
+	
+	# or call from CLI
+	libmshock.pm [vh] [-l logfile] [function] [args...]
+		-v 	verbose mode
+		-h 	print usage/help
+		-l 	logfile for module
+
+=head1 LICENSE AND COPYRIGHT
+
+Copyright (c) 2012 Matt Shockley
+
+This library is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
+
+=head1 BUGS AND LIMITATIONS
+
+See TODO or INV comment tags for more info on current bugs and limitations.
+
+=head1 INCOMPATIBILITIES
+
+This module is/was mostly tested and debugged under ActivePerl v5.10 due to production limitations.
+It is possible that there will be incompatibilities using this module under Perl versions older than v5.10.
+
+=head1 AVAILABILITY
+
+git clone https://github.com/mshock/libmshock.git
+
+=head1 AUTHOR
+
+Matt Shockley <shockleyme |AT| gmail.com>
+
+=head1 VERSION
+
+1.00
+
+=head2 Methods
+
+=over
+
+=item new()
+
+Returns a new libmshock object.
+Possible ways to call B<new()>
+	$lib = new 
+	$lib = new libmshock(\%cfg);
+	
+
+=item C<>
+
+
+=back
+
+
+=cut
