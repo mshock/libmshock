@@ -3,6 +3,7 @@
 # my very own perl module
 # containing many useful subroutines
 # and possibly some less useful ones
+# TODO: stuck halfway between functional and OO, convert everything entirely to OO
 # TODO: look into using Config::Param to replace Getopt::Std & Config::Simple
 # TODO: add Pod::Usage documentation of module, usage() can be for callers
 package libmshock;
@@ -78,8 +79,8 @@ sub init {
 		pm_usage();
 	}
 	else {
-		# report module load success if being used
-		load_success();
+		# report module load success if being imported
+		load_success() if $verbose;
 	}
 }
 
@@ -89,13 +90,34 @@ sub run {
 }
 
 # object constructor for calling script
-sub new {
+sub load {
 	# create new libmshock object
-	my ($this, @params) = @_;
+	my ($this, $params_href) = @_;
+	$params_href = {} if !$params_href;
 	my $class = ref($this) || $this;
+		
+	# load options from config file
+	# = load_conf(CONF_PATH);
+	# load/override options from CLI
 	
-	# default opts for object
-	my $self = {};
+	# load/override options from constructor arguments	
+	
+	# template for checking all constructor parameters
+	my $tmpl = {
+		auto_add => {
+			default => 'false',
+			defined => 1,
+			
+		}
+	};
+	my $opts = check($tmpl, $params_href, $verbose)  
+		or fatal("problem with constructor parameters: " . Params::Check::last_error());
+	
+	
+	# default attributes/opts for object
+	my $self = {
+		auto_add => $opts->{auto_add},
+	};
 	
 	# create the class instance
 	bless $self, $class;
@@ -174,10 +196,13 @@ sub load_conf {
 	my ($conf_file, $cfg_href) = @_;
 	
 	# if no conf file, create one if create_config enabled in libmshock.conf
-	if ((! -f $conf_file) && $lib_opts{create_conf}) {
+	if ((! -f $conf_file) && exists $lib_opts{create_conf} && $lib_opts{create_conf} =~ REGEX_TRUE) {
 		create_file($conf_file, ("# this is a template configuration file\n# hash (#) or semi-colon (;) denotes commented line"))
-			or error("failed to create configuration file: $conf_file")
-			and return 0;
+			or error("failed to create config file: $conf_file")
+			and return;
+	}
+	elsif (! -f $conf_file) {
+		error("failed to find config file: $conf_file and auto_create not enabled") and return;
 	}
 	
 	my $cfg = new Config::General( (
@@ -187,9 +212,9 @@ sub load_conf {
 		
 	))
 		or error("could not load config file: $conf_file")
-		and return 0;
+		and return;
 
-	# simplified ini file, all variables under default block	
+	# get all configs from loaded file into hash
 	%{$cfg_href} = $cfg->getall
 		or warning("problem loading config file values into hash: $!");
 	
@@ -354,15 +379,40 @@ sub INT_CONFESS {
 	confess "libmshock.pm caught interrupt, stack backtracing...\n";	
 }
 
-# catch undefined sub calls
+# use AUTOLOAD to handle all get/set OO operations
 sub AUTOLOAD {
+	my ($self, @args) = @_;
+	# get/set: get_attribute/set_attribute
+	my ($operation, $attribute) = ($AUTOLOAD =~ /(get|set)_(\w+)/i);
+	# not a get/set operation
+	error("Method name $AUTOLOAD is not in the recognized form (get|set)_attribute\n") and return 
+		unless ($operation && $attribute);
+	# no such attribute to get or add+set not enabled
+		error("No such attribute '$attribute' exists in the class " . ref($self)) and return
+			unless (exists $self->{$attribute} || $self->{auto_add} =~ REGEX_TRUE);
+	
+	
+	# handle operation & define sub for future use
+	if (lc $operation eq 'get') {
+		# have to temporarily disable strict refs to alter symbol table
+		{	
+			no strict 'refs';
+			*{$AUTOLOAD} = sub {return shift->{$attribute}};
+		}
+		return $self->{$attribute};
+	}
+	elsif (lc $operation eq 'set') {
+		{
+			no strict 'refs';
+			*{$AUTOLOAD} = sub {return shift->{$attribute} = shift};
+		}
+		return $self->{$attribute} = $args[0];
+	}
 	
 }
 
-# release all resources
-sub DESTROY {
-	
-}
+# empty DESTROY to avoid AUTOLOAD call
+sub DESTROY {}
 
 # end script, begin POD
 __END__
