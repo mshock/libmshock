@@ -3,7 +3,8 @@
 # my very own perl module
 # containing many useful subroutines
 # and possibly some less useful ones
-# TODO: stuck halfway between functional and OO, convert everything entirely to OO
+# TODO: stuck halfway between functional and OO, convert everything entirely to OO, thinking major paradigm shift
+# INV: Moose, Mouse, Moo, Mo - so many OO modules. I am overhead averse and find 'rolling-my-own' to be highly educational - probably stick with that
 # TODO: look into using Config::Param to replace Getopt::Std & Config::Simple
 # TODO: add Pod::Usage documentation of module, usage() can be for callers
 package libmshock;
@@ -394,7 +395,7 @@ sub AUTOLOAD {
 	
 	# handle operation & define sub for future use
 	if (lc $operation eq 'get') {
-		# have to temporarily disable strict refs to alter symbol table
+		# temporarily disable strict refs to alter symbol table
 		{	
 			no strict 'refs';
 			*{$AUTOLOAD} = sub {return shift->{$attribute}};
