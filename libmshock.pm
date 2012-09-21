@@ -21,6 +21,7 @@ our @EXPORT = qw(process_opts vprint REGEX_TRUE error warning);
 our @EXPORT_OK = qw(get_self id_ref create_file dot print_href CONF_PATH MOD_PATH);
 
 use Carp;
+use Pod::Usage;
 use Params::Check qw(check);
 use Getopt::Std qw(getopts);
 use Config::General;
@@ -77,7 +78,8 @@ sub init {
 		# execute default behavior here when called from CLI
 		run();
 		# module usage message (not to be confused with extensible usage sub)
-		pm_usage();
+		#pm_usage();
+		pod2usage(-verbose => 2 );
 	}
 	else {
 		# report module load success if being imported
@@ -106,7 +108,7 @@ sub load {
 	# template for checking all constructor parameters
 	my $tmpl = {
 		auto_add => {
-			default => 'false',
+			default => 'true',
 			defined => 1,
 			
 		}
@@ -145,7 +147,7 @@ sub process_opts {
 	%cfg_opts = %{load_conf($conf_file)}
 		or warning('could not load config file, skipping (default mode)');
 	
-	usage() if $cli_args{h} || $ARGV[0];
+	pod2usage(1) if $cli_args{h} || $ARGV[0];
 	$verbose = $cli_args{v} || $cfg_opts{verbose} =~ REGEX_TRUE;
 	my $logfile_path = $cli_args{l} || $cfg_opts{log_path} || "$self.log";
 	
@@ -381,6 +383,8 @@ sub INT_CONFESS {
 }
 
 # use AUTOLOAD to handle all get/set OO operations
+# INV: what about auto-creating other common functions here too?
+# or allow importing script add functions to the library (possibly permanently???)
 sub AUTOLOAD {
 	my ($self, @args) = @_;
 	# get/set: get_attribute/set_attribute
@@ -397,7 +401,8 @@ sub AUTOLOAD {
 	if (lc $operation eq 'get') {
 		# temporarily disable strict refs to alter symbol table
 		{	
-			no strict 'refs';
+			#no strict 'refs';
+			
 			*{$AUTOLOAD} = sub {return shift->{$attribute}};
 		}
 		return $self->{$attribute};
@@ -423,7 +428,7 @@ __END__
 libmshock - mshock's library of more-or-less handy Perl functions
 
 =head1 SYNOPSIS
-	
+
 	# import into script:
 	use libmshock;
 	my $libmshock = libmshock->new(\%opts);
@@ -433,7 +438,7 @@ libmshock - mshock's library of more-or-less handy Perl functions
 		-v 	verbose mode
 		-h 	print usage/help
 		-l 	logfile for module
-
+	
 =head1 LICENSE AND COPYRIGHT
 
 Copyright (c) 2012 Matt Shockley
@@ -466,17 +471,13 @@ Matt Shockley <shockleyme |AT| gmail.com>
 
 =over
 
-=item new()
+=item load()
 
 Returns a new libmshock object.
 Possible ways to call B<new()>
 	$lib = new 
 	$lib = new libmshock(\%cfg);
 	
-
-=item C<>
-
-
 =back
 
 
