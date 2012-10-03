@@ -7,6 +7,7 @@
 # INV: Moose, Mouse, Moo, Mo - so many OO modules. I am overhead averse and find 'rolling-my-own' to be highly educational - probably stick with that
 # TODO: look into using Config::Param to replace Getopt::Std & Config::Simple
 # TODO: add Pod::Usage documentation of module, usage() can be for callers
+# TODO: add DBI basic funcionts (init handles)
 package libmshock;
 
 # must support an elderly version of ActivePerl
@@ -148,7 +149,11 @@ sub process_opts {
 		or warning('could not load config file, skipping (default mode)');
 	
 	pod2usage(1) if $cli_args{h} || $ARGV[0];
+	
+	# set verbosity
 	$verbose = $cli_args{v} || $cfg_opts{verbose} =~ REGEX_TRUE;
+	$Params::Check::VERBOSE = $verbose;
+	
 	my $logfile_path = $cli_args{l} || $cfg_opts{log_path} || "$self.log";
 	
 	# default mode will be to open logs in append mode
@@ -401,7 +406,7 @@ sub AUTOLOAD {
 	if (lc $operation eq 'get') {
 		# temporarily disable strict refs to alter symbol table
 		{	
-			#no strict 'refs';
+			no strict 'refs';
 			
 			*{$AUTOLOAD} = sub {return shift->{$attribute}};
 		}
