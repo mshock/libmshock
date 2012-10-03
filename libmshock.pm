@@ -1,6 +1,6 @@
 #! perl -w
 
-# my very own perl module
+# my very own perl (currently, monstrous) module
 # containing many useful subroutines
 # and possibly some less useful ones
 # TODO: stuck halfway between functional and OO, convert everything entirely to OO, thinking major paradigm shift
@@ -256,7 +256,7 @@ sub print_href {
 }
 
 # creates an empty file
-# optional list argument for initial contents
+# takes optional list for initial contents 
 # returns false or filehandle to new file
 sub create_file {
 	my ($file, @opt_lines) = @_;
@@ -264,12 +264,12 @@ sub create_file {
 	# verify not overwriting a file
 	if (-f $file) {
 		warning("create_file() cannot create a file that already exists (aborting): $file");
-		return 0;
+		return;
 	}
 	# create file and write optional initial lines
 	open (my $fh ,'+>', $file)
 		or error("could not create file for read/write: $file")
-		and return 0;
+		and return;
 	# TODO: is this the most efficient way to do this? just curious...
 	print $fh join "\n", @opt_lines;
 	
@@ -309,7 +309,7 @@ sub vprint {
 	
 	# handle level of message (not to be confused with verbosity)
 	# fake switch statement (Switch is deprecated)
-	if (!$level) {print "\n$msg\n" if $verbose}
+	unless ($level) {print "\n$msg\n" if $verbose}
 	elsif ($level == 1) {carp "\n$msg\n" if $verbose}
 	elsif ($level == 2) {carp "\n$msg\n"}
 	elsif ($level == 3) {croak "\n$msg\n"}
@@ -407,7 +407,6 @@ sub AUTOLOAD {
 		# temporarily disable strict refs to alter symbol table
 		{	
 			no strict 'refs';
-			
 			*{$AUTOLOAD} = sub {return shift->{$attribute}};
 		}
 		return $self->{$attribute};
