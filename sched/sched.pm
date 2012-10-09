@@ -37,7 +37,8 @@ sub new {
 	};
 	
 	my $parsed = check($tmpl,$params)
-		or return undef;
+		or warning("failed to create task object: scheduled task arguments must be defined if provided")
+		and return undef;
 	
 	my $self = {
 		cmd => $parsed->{cmd},
@@ -54,11 +55,16 @@ sub new {
 sub schedule {
 	my $self = shift;
 	
+	# check if task is already active
+	if( $self->{active} && $self->{active} =~ m/^-?\d+$/ ) {
+		warning(sprintf('task is already scheduled w/ PID: %s', $self->{active}));
+		return;
+	}
+	
 	# schedule the task
 	# set active equal to pid
 	$self->{active} = sched_task($self->{sched}, $self->{cmd});
-
-
+	return $self->{active};
 }
 
 # functionally schedule a forked command

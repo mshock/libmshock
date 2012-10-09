@@ -1,5 +1,8 @@
 #! perl -w
 
+# TODO: this is becoming a mess, turns out package namespace is out of whack, OO + functional collisions are becoming a hassle
+# REFACTOR
+
 # my very own perl (currently, monstrous) module
 # containing many useful subroutines
 # and possibly some less useful ones
@@ -7,7 +10,7 @@
 # INV: Moose, Mouse, Moo, Mo - so many OO modules. I am overhead averse and find 'rolling-my-own' to be highly educational - probably stick with that
 # TODO: look into using Config::Param to replace Getopt::Std & Config::Simple
 # TODO: add Pod::Usage documentation of module, usage() can be for callers
-# TODO: add DBI basic funcionts (init handles)
+
 package libmshock;
 
 # must support an elderly version of ActivePerl
@@ -34,7 +37,7 @@ use File::Basename qw(basename);
 ###########################################
 # handy constants
 use constant {
-	REGEX_TRUE => qr/true|t|y|yes|1/i,
+	REGEX_TRUE => qr/true|(^t$)|(^y$)|yes|(^1$)/i,
 	MOD_PATH => __FILE__,
 	# sorta clever initialization of config file path constant ^_^
 	# newer (5.13.4+) Perl versions can avoid a do{...} block:

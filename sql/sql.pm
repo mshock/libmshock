@@ -31,10 +31,9 @@ sub new {
 	return $self;
 }
 
-# OO connect and return handle
+# use OO attr to create and return handle
 sub get_handle {
-	
-	return (init_handles(shift))[0];
+	return (init_handles(shift))[0]; 
 }
 
 # verify that a hashref contains all expected database info
@@ -90,7 +89,43 @@ sub init_handles {
 	return @dbhs;
 }
 
-# BCP interface
+# BCP interface subs - see BCPlib for a BCP-only module
+
+# OO bcp import interface
+sub bcp_in {
+	my $self = shift;
+	my $params = shift;
+	
+	$params->{db} = $self;
+	$params->{op} = 'in';
+	
+	# handle bcp command
+	return bcp($params);
+}
+
+# OO bcp export interface
+sub bcp_out {
+	my $self = shift;
+	my $params = shift;
+	
+	$params->{db} = $self;
+	$params->{op} = 'out';
+	
+	return bcp($params);
+}
+
+# OO bcp query export interface
+sub bcp_queryout {
+	my $self = shift;
+	my $params = shift;
+	
+	$params->{db} = $self;
+	$params->{op} = 'queryout';
+	
+	return bcp($params);
+}
+
+# BCP functional interface
 sub bcp {
 	my $params = shift;
 	
@@ -109,6 +144,7 @@ sub bcp {
 		db => {
 			required => 1,
 			defined => 1,
+			allow => sub {return $_->isa('sql')},
 			store => \$db,
 		},
 		bcp_path => {
@@ -144,7 +180,12 @@ sub bcp {
 	if ($op eq 'queryout' && !$query_out) {
 		warning("no query passed for queryout in bcp");
 		return;
-	} 
+	}
+	# else a table needs to be supplied
+	elsif ($op ne 'queryout' && !$table) {
+		warning("no table passed for operation: $op in bcp");
+		return;
+	}
 	
 	# change bcp's first argument based on operation
 	my $bcp_arg = $op eq 'queryout' ? $query_out : "[$db->{name}].dbo.[$table]";
