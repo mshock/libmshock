@@ -134,7 +134,7 @@ sub bcp {
 	my $tmpl = {
 		op => {
 			required => 1,
-			allow => qr/^(in|out|queryout)$/i,
+			allow => qr/^(?:in|out|queryout)$/i,
 			store => \$op,
 		},
 		query => {
@@ -144,7 +144,7 @@ sub bcp {
 		db => {
 			required => 1,
 			defined => 1,
-			allow => sub {return $_->isa('sql')},
+			allow => sub {return shift->isa('sql')},
 			store => \$db,
 		},
 		bcp_path => {

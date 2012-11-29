@@ -279,6 +279,17 @@ sub create_file {
 	return $fh;
 }
 
+# read an entire file into memory
+sub slurp_file {
+	my ($file) = @_;
+	local $/;
+	my $fh;
+	open($fh, '<', $file) or error("could not open file for slurping: $file") and return;
+	my $suction = <$fh>;
+	close $fh;
+	return $suction;
+}
+
 # standard warning message
 # notification that feature failed to load, not fatal
 sub warning {
