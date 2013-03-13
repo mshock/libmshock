@@ -1,18 +1,22 @@
 #! perl -w
 
-# TODO: this is becoming a mess, turns out package namespace is out of whack, OO + functional collisions are becoming a hassle
-# REFACTOR
+# TODO this is becoming a mess, turns out package namespace is out of whack, OO + functional collisions are becoming a hassle
+# TODO refactor useful subs from other projects into this module
 
 # my very own perl (currently, monstrous) module
 # containing many useful subroutines
 # and possibly some less useful ones
-# TODO: stuck halfway between functional and OO, convert everything entirely to OO, thinking major paradigm shift
-# INV: Moose, Mouse, Moo, Mo - so many OO modules. I am overhead averse and find 'rolling-my-own' to be highly educational - probably stick with that
-# TODO: look into using Config::Param to replace Getopt::Std & Config::Simple
-# TODO: add Pod::Usage documentation of module, usage() can be for callers
+# TODO stuck halfway between functional and OO, convert everything entirely to OO, thinking major paradigm shift
+# TODO switch to AppConfig standard with external default definitions file
+# TODO switch to Log4Perl for log handling
+# TODO (INV) Smart::Comments for debug messages and commenting
+# TODO add Pod::Usage documentation of module, usage() can be for callers
+# TODO move pod external or make inline
+# TODO (INV) Moose, Mouse, Moo, Mo - so many OO modules. I am overhead averse and find 'rolling-my-own' to be highly educational - probably stick with that
 
 package libmshock;
 
+# TODO (INV) not everything will work if we use this version... 5.10 is standard
 # must support an elderly version of ActivePerl
 use 5.010_000;
 
@@ -20,75 +24,70 @@ use strict;
 
 # export some useful stuff (or not)
 require Exporter;
-our @ISA = qw(Exporter);
-our @EXPORT = qw(process_opts vprint REGEX_TRUE error warning);
-our @EXPORT_OK = qw(get_self id_ref create_file dot print_href CONF_PATH MOD_PATH);
+our @ISA       = qw(Exporter);
+our @EXPORT    = qw(REGEX_TRUE);
+our @EXPORT_OK = qw(id_ref create_file dot print_href CONF_PATH MOD_PATH);
+
+# add the :all tag to Exporter
+our %EXPORT_TAGS = ( all => [ ( @EXPORT, @EXPORT_OK ) ],
+					 min => [qw()] );
 
 use Carp;
-use Pod::Usage;
+use feature qw(say switch);
+use AppConfig qw(:argcount);
+# TODO (INV) Params::Validate a better alternative? or use prototypes
 use Params::Check qw(check);
-use Getopt::Std qw(getopts);
-use Config::General;
 use File::Basename qw(basename);
-
+use Pod::Usage qw(pod2usage);
 
 ###########################################
 #	globals
 ###########################################
+# TODO (INV) move constant declaration to external code file?
 # handy constants
 use constant {
 	REGEX_TRUE => qr/true|(^t$)|(^y$)|yes|(^1$)/i,
-	MOD_PATH => __FILE__,
+	MOD_PATH   => __FILE__,
+
 	# sorta clever initialization of config file path constant ^_^
 	# newer (5.13.4+) Perl versions can avoid a do{...} block:
 	# 	CONF_PATH => (__FILE__ =~ s/pm$/conf/ir),
-	CONF_PATH => do {$_ = __FILE__; s/pm$/conf/i; $_ },
+	CONF_PATH => do { $_ = __FILE__; s/pm$/conf/i; $_ },
 };
-
-# globals for use in calling script
-our (%cli_args,%cfg_opts,$verbose,$log_handle, $die_msg);
-# implement AUTOLOAD
-our $AUTOLOAD;
-# internal globals
-my (%lib_opts);
 
 # perform basic initialization tasks
 # use caller to determine if called directly or included as module
-init(caller);
+if (caller) {
 
-# be a good package and return true
-1;
+	# be a good package and return true
+	return 1;
+}
 
+our ( $cfg, @CLI );
+
+# backup CLI prior to consumption
+@CLI = @ARGV;
+
+init();
 
 #########################################
-#	begin subs	
+#	begin subs
 #
 #########################################
 
 # always runs at module load/call
-# TODO: load module configs from conf file (if any)
+# TODO load module configs from conf file (if any)
 sub init {
-	my ($caller_flag) = @_;
-	
-	# load config file for the module itself
-	%lib_opts = %{load_conf(CONF_PATH)}
-		or warn("could not load libmshock.conf config file - using all default configs\n");
-	
+
+	# the ever-powerful and needlessly vigilant config variable - seriously
+	$cfg = load_conf();
+
 	# initialize some additional behaviors for interrupts
 	signal_hooks();
-		
-	# check if called from CLI or used as a module
-	unless ($caller_flag) {
-		# execute default behavior here when called from CLI
-		run();
-		# module usage message (not to be confused with extensible usage sub)
-		#pm_usage();
-		pod2usage(-verbose => 2 );
-	}
-	else {
-		# report module load success if being imported
-		load_success() if $verbose;
-	}
+
+	# execute default behavior here when called from CLI
+	run();
+
 }
 
 # run this code when module is called directly from CLI
@@ -96,187 +95,129 @@ sub run {
 	print "this is the default run() code\n";
 }
 
-# object constructor for calling script
-sub load {
-	# create new libmshock object
-	my ($this, $params_href) = @_;
-	$params_href = {} if !$params_href;
-	my $class = ref($this) || $this;
-		
-	# load options from config file
-	# = load_conf(CONF_PATH);
-	# load/override options from CLI
-	
-	# load/override options from constructor arguments	
-	
-	# template for checking all constructor parameters
-	my $tmpl = {
-		auto_add => {
-			default => 'true',
-			defined => 1,
-			
-		}
-	};
-	my $opts = check($tmpl, $params_href, $verbose)  
-		or fatal("problem with constructor parameters: " . Params::Check::last_error());
-	
-	
-	# default attributes/opts for object
-	my $self = {
-		auto_add => $opts->{auto_add},
-	};
-	
-	# create the class instance
-	bless $self, $class;
-	
-	return $self;
+# (re)loads configs from an optional relative path for sub-script callers
+sub load_conf {
+	my ($relative_path) = (@_);
+
+	$cfg = AppConfig->new( { CREATE => 1,
+							 ERROR  => \&appconfig_error,
+							 GLOBAL => { ARGCOUNT => ARGCOUNT_ONE,
+										 DEFAULT  => "<undef>",
+							 },
+						   }
+	);
+
+# bring in configuration code from external file
+# separate AppConfig hash and possible future configs for ease of use
+# INV: look into best practices for calling sub-packages (another module is preventing me from using Config.pm)
+	require 'Config/config.pl';
+	TQASched::Config::define_defaults( \$cfg );
+
+# first pass at CLI args, mostly checking for config file setting (note - consumes @ARGV)
+	$cfg->getopt();
+
+# parse config file for those vivacious variables and their rock steady, dependable values
+	$cfg->file( ( defined $relative_path ? "$relative_path/" : '' )
+				. $cfg->config_file() );
+
+	# second pass at CLI args, they take precedence over config file
+	$cfg->getopt( \@CLI );
+
+	return $cfg;
 }
 
-# processs generic command line options
-# (verbose and help/usage)
-# only argument is extra flags
-# TODO: add simple mode which turns off complaints about CLI or configs if not in use
-sub process_opts {
-	my ($caller_opts) = @_;
-	
-	# get script filename minus extension
-	my $self = get_self();
-	
-	# load CLI options, defaults and caller-specified
-	getopts('vhl'.$caller_opts, \%cli_args);
-	
-	my $conf_file = $cli_args{c} || "$self.conf";
-	
-	# load caller script's config file options
-	%cfg_opts = %{load_conf($conf_file)}
-		or warning('could not load config file, skipping (default mode)');
-	
-	pod2usage(1) if $cli_args{h} || $ARGV[0];
-	
-	# set verbosity
-	$verbose = $cli_args{v} || $cfg_opts{verbose} =~ REGEX_TRUE;
-	$Params::Check::VERBOSE = $verbose;
-	
-	my $logfile_path = $cli_args{l} || $cfg_opts{log_path} || "$self.log";
-	
-	# default mode will be to open logs in append mode
-	load_log({
-		MODE => '>>',
-		PATH => $logfile_path,		
-	})
-		or warning('could not open log file, skipping');
-	
-	return 1;
+# return FileDate format for current day GMT
+sub now_date {
+	my ( $sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst )
+		= gmtime(time);
+	return sprintf( '%u%02u%02u', $year + 1900, $mon + 1, $mday );
 }
 
-# executes when module loads successfully when imported into another
-# TODO: some way to disable this (verbosity?)
-# TODO: actually check that all functionality is working
-sub load_success {
-	print "libmshock.pm loaded successfully!\n";
+# return UPD date based on current date
+sub upd_date {
+	my ($now_date) = @_;
+	unless ( defined $now_date ) {
+		$now_date = now_date();
+	}
+	my ( $year, $month, $mday ) = parse_filedate($now_date);
+	my $time_arg = timegm( 0, 0, 0, $mday, $month - 1, $year - 1900 )
+		or die "[1]\tupd_date() failed for: $now_date\n";
+
+	# get DOW
+	my ($wday) = ( gmtime($time_arg) )[6];
+
+	# weekends use Friday's UPD
+	# fastest way to get
+	#	sat
+	if ( $wday == 6 ) {
+		$time_arg -= 86400;
+	}
+
+	#	sun
+	elsif ( $wday == 0 ) {
+		$time_arg -= 172800;
+	}
+
+	#	mon
+	elsif ( $wday == 1 ) {
+		$time_arg -= 259200;
+	}
+
+	# all other days use previous date
+	else {
+		$time_arg -= 86400;
+	}
+
+	# convert back to YYYYMMDD format
+	( $year, $month, $mday ) = gmtime($time_arg)
+		or die "[2]\tupd_date() failed for: $time_arg\n";
+
+	# zero pad month and day
+	return sprintf( '%u%02u%02u', $year, $month, $mday );
 }
 
 # compares a variable reference against a Perl reftype (see docs for list)
 # no type arg: return ref type (empty string if none)
 # otherwise compare ref against type, return bool
 sub id_ref {
-	my ($ref, $type) = @_;
+	my ( $ref, $type ) = @_;
 	my $ref_type = ref($ref);
+
 	# no args, return type
-	if (! defined $type) {
+	if ( !defined $type ) {
 		return $ref_type;
 	}
+
 	# compare types
-	return uc $ref_type eq uc $type; 
+	return uc $ref_type eq uc $type;
 }
 
-# load / create default log
-# returns true on success
-sub load_log {
-	my ($opts) = @_;
-
-	open($log_handle, $opts->{MODE}, $opts->{PATH})
-		or error('could not handle log file'); 
-		
-	return tell($log_handle) != -1 ? 1 : 0;
-}
-
-# load configurations from conf file to hash
-# args: conf file path, output conf file hash ref
-sub load_conf {
-	my ($conf_file, $cfg_href) = @_;
-	
-	# if no conf file, create one if create_config enabled in libmshock.conf
-	if ((! -f $conf_file) && exists $lib_opts{create_conf} && $lib_opts{create_conf} =~ REGEX_TRUE) {
-		create_file($conf_file, ("# this is a template configuration file\n# hash (#) or semi-colon (;) denotes commented line"))
-			or error("failed to create config file: $conf_file")
-			and return;
+# parse YYYYMMDD into (y,m,d)
+sub parse_filedate {
+	my ($filedate) = @_;
+	if ( my ( $year, $month, $mday )
+		 = ( $filedate =~ m/(\d{4})(\d{2})(\d{2})/ ) )
+	{
+		return ( $year, $month, $mday );
 	}
-	elsif (! -f $conf_file) {
-		error("failed to find config file: $conf_file and auto_create not enabled") and return;
-	}
-	
-	my $cfg = new Config::General( (
-		-ConfigFile => $conf_file,
-		-IncludeRelative => 1,
-		-LowerCaseNames => 1,
-		
-	))
-		or error("could not load config file: $conf_file")
-		and return;
-
-	# get all configs from loaded file into hash
-	%{$cfg_href} = $cfg->getall
-		or warning("problem loading config file values into hash: $!");
-	
-	# dump conf key pairs (testing)
-	#print_href({hashref => $cfg_href});
-	
-	return $cfg_href;
+	return;
 }
 
-# simple hash dump utility/debug function
-# basic sorting functionality (as sub ref)
-# TODO: how is performance on large hashes? possible improvements?
-sub print_href {
-	my ($href, $sort, $sort_func);
-	
-	my $tmpl = {
-		hashref	=> { required => 1, default => {}, defined => 1, strict_type => 1, store => \$href },
-		enable_sort => {default => 0, defined => 1, strict_type => 1, store => \$sort},
-		sort_func => {default => sub {$a cmp $b}, defined => 1 , strict_type => 1, store => \$sort_func} 
-	};
-	check($tmpl,shift,$verbose)
-		or warning('print_href() arg check failed: ' . Params::Check::last_error());
-	
-	# get hash keys
-	my @keys = keys %{$href};
-	@keys = sort $sort_func @keys if $sort;
-	
-	for my $key (@keys) {
-		print "$key => ", $href->{$key}, "\n";
-	}	
-}
+# handle any errors in AppConfig parsing - namely log them
+sub appconfig_error {
 
-# creates an empty file
-# takes optional list for initial contents 
-# returns false or filehandle to new file
-sub create_file {
-	my ($file, @opt_lines) = @_;
-	
-	# verify not overwriting a file
-	if (-f $file) {
-		warning("create_file() cannot create a file that already exists (aborting): $file");
-		return;
-	}
-	# create file and write optional initial lines
-	open (my $fh ,'+>', $file)
-		or error("could not create file for read/write: $file")
-		and return;
-	# TODO: is this the most efficient way to do this? just curious...
-	print $fh join "\n", @opt_lines;
-	
-	return $fh;
+	# hacky way to force always writing this log to top-level dir
+	# despite the calling script's location
+	my $top_log = ( __PACKAGE__ ne 'TQASched'
+					? $INC{'TQASched.pm'} =~ s!\w+\.pm!!gr
+					: ''
+	) . $cfg->log();
+
+	write_log( { logfile => $top_log,
+				 type    => 'WARN',
+				 msg     => join( "\t", @_ ),
+			   }
+	);
 }
 
 # read an entire file into memory
@@ -284,61 +225,112 @@ sub slurp_file {
 	my ($file) = @_;
 	local $/;
 	my $fh;
-	open($fh, '<', $file) or error("could not open file for slurping: $file") and return;
+	open( $fh, '<', $file )
+		or error("could not open file for slurping: $file")
+		and return;
 	my $suction = <$fh>;
 	close $fh;
 	return $suction;
 }
 
-# standard warning message
-# notification that feature failed to load, not fatal
-sub warning {
-	my ($msg) = @_;
-	vprint("[warning]\t$msg\n",1);
+# calculate JDN from YMD
+sub julianify {
+	my ( $year, $month, $day ) = @_;
+	my $a = int( ( 14 - $month ) / 12 );
+	my $y = $year + 4800 - $a;
+	my $m = $month + 12 * $a - 3;
+
+	return
+		  $day 
+		+ int( ( 153 * $m + 2 ) / 5 ) 
+		+ 365 * $y 
+		+ int( $y / 4 )
+		- int( $y / 100 ) 
+		+ int( $y / 400 )
+		- 32045;
 }
 
-# standard error (not STDERR) message
-# usually the root cause of why the feature failed to load
-# prints $! error var for debug
-sub error {
-	my ($msg) = @_;
-	vprint("[ error ]\t$msg: $!\n",2);
-}
+# init handles method, a little different from standard
+# only imports DBI if called
+sub init_handle {
+	my @db_hrefs = @_;
 
-# standard croak (die), but also writes to log first
-# useful for debugging, but may come in handy elsewhere
-sub fatal {
-	my ($msg) = @_;
-	vprint("[ fatal ]\t$msg: $!\n",3);
-}
+	require DBI;
+	DBI->import();	
 
-# improved print sub for logging and verbosity
-# optional level for debugging
-sub vprint {
-	my ($msg, $level) = @_;
-	
-	# only print to the log if the handle is legit
-	print $log_handle $msg if defined $log_handle && tell($log_handle) >= 0;
-	# only print to STDOUT if verbose mode enabled
-	
-	# handle level of message (not to be confused with verbosity)
-	# fake switch statement (Switch is deprecated)
-	unless ($level) {print "\n$msg\n" if $verbose}
-	elsif ($level == 1) {carp "\n$msg\n" if $verbose}
-	elsif ($level == 2) {carp "\n$msg\n"}
-	elsif ($level == 3) {croak "\n$msg\n"}
-	else {warn "\n\nhold on to your butts!\n\n" and croak "\n$msg\n"};
-	
+	my @dbhs = ();
+	for my $db (@db_hrefs) {
+		# connecting to master since database may need to be created
+		push @dbhs,
+			DBI->connect(
+			sprintf(
+				"dbi:ODBC:Database=%s;Driver={SQL Server};Server=%s;UID=%s;PWD=%s",
+				$db->{name} || 'master', $db->{server},
+				$db->{user}, $db->{pwd}
+			)
+			) or die "failed to initialize database handle\n";
+	}
+	return \@dbhs;
 }
 
 
-# get the basename of the calling script
-# TODO: add more options (various path components)
-sub get_self {
-	my ($strip_extension) = @_;
-	my $name = basename($0);
-	($name =~ s/\.p[lm]//i) if $strip_extension !~ REGEX_TRUE;
-	return $name;
+# translate weekday string to localtime int code
+sub code_weekday {
+	my $weekday = shift;
+	my $rv;
+	given ($weekday) {
+		when (/monday|mon/i)    { $rv = 1 }
+		when (/tuesday|tues?/i)   { $rv = 2 }
+		when (/wednesday|wed/i) { $rv = 3 }
+		when (/thursday|thurs?/i)  { $rv = 4 }
+		when (/friday|fri/i)    { $rv = 5 }
+		when (/saturday|sat/i)  { $rv = 6 }
+		when (/sunday|sun/i)    { $rv = 0 }
+		default             { $rv = -1 };
+	}
+	return $rv;
+}
+
+# add ordinal component to numeric values (-st,-nd,-rd,-th)
+sub ordinate {
+	my ($number) = (@_);
+	my $ord = '';
+	given ($number) {
+		when (/1[123]$/) { $ord = 'th' }
+		when (/1$/)      { $ord = 'st' }
+		when (/2$/)      { $ord = 'nd' }
+		when (/3$/)      { $ord = 'rd' }
+		default          { $ord = 'th' };
+	}
+	return $number . $ord;
+}
+
+# current timestamp SQL DateTime format for GMT or machine time (local)
+sub timestamp {
+	my @now
+		= $cfg->tz() =~ m/(?:GM[T]?|UT[C]?)/i
+		? gmtime(time)
+		: localtime(time);
+	return
+		sprintf "%4d-%02d-%02d %02d:%02d:%02d",
+		$now[5] + 1900,
+		$now[4] + 1,
+		@now[ 3, 2, 1, 0 ];
+}
+
+# total seconds after midnight calculation
+sub offset_midnight_seconds {
+	my ( $hour, $min, $sec ) = @_;
+	return $hour * 3600 + $min * 60 + $sec;
+}
+
+# human readable clock time string from seconds offset
+sub offset_clock_minutes {
+	my $offset = shift;
+
+	my $hours   = int( $offset / 60 );
+	my $minutes = $offset - $hours * 60;
+	return sprintf '%02u:%02u', $hours, $minutes;
 }
 
 # returns true if arg is a . or .. file
@@ -347,96 +339,33 @@ sub dot {
 	return shift =~ /^\.+$/;
 }
 
-# release log filehandle
-# and all fhs in arrayref of handles
-sub cleanup {
-	my ($fhs_aref);
-
-	my $tmpl = {
-		filehandles => {default => [], defined => 1, strict_type => 1, store => \$fhs_aref}
-	};
-	check($tmpl, shift, $verbose)
-		or warning('cleanup() arg check failed: ' . Params::Check::last_error());
-
-	for my $filehandle (@{$fhs_aref}) {
-	 	 close $filehandle; 
-	}
-
-	close $log_handle if $log_handle;	
-}
-
 # print usage/help statement
 # intelligently handle exit code
-# TODO: use Pod::Usage
+# TODO use Pod::Usage
 sub usage {
-	my $self = get_self();
-	print "
-usage:	$self.pl [hvl$
-	-h	prints this message
-	-v 	verbose mode enabled
-	-l 	logfile path";
-	exit($cli_args{h}?0:1);
+	my ($exit_val) = @_;
+	pod2usage( { -verbose => $cfg->verbosity,
+				 -exit    => $exit_val || 0
+			   }
+	);
 }
 
-# usage statement for the module itself
-sub pm_usage {
-	print "
-libmshock.pm called directly rather than imported
-you should be using this as a Perl module, silly
-stay tuned for direct call functionality
-";
-}
-
+# TODO (INV) is there a better way to get stack backtrace out of confess?
 # overwrite signals to execute custom functionality
 # usually carp before (likely) releasing to original handler
-sub signal_hooks {	
+sub signal_hooks {
+
 	# interrupt signal (control-C)
-	$SIG{INT} = \&INT_CONFESS if $lib_opts{'default.confess_int'};
+	$SIG{INT} = \&INT_CONFESS if $cfg->{confess_int};
 }
 
 # custom handler for SIG{INT}
 sub INT_CONFESS {
+
 	# portable && paranoid
 	$SIG{INT} = \&INT_CONFESS;
-	confess "libmshock.pm caught interrupt, stack backtracing...\n";	
+	confess "libmshock.pm caught interrupt, stack backtracing...\n";
 }
-
-# use AUTOLOAD to handle all get/set OO operations
-# INV: what about auto-creating other common functions here too?
-# or allow importing script add functions to the library (possibly permanently???)
-sub AUTOLOAD {
-	my ($self, @args) = @_;
-	# get/set: get_attribute/set_attribute
-	my ($operation, $attribute) = ($AUTOLOAD =~ /(get|set)_(\w+)/i);
-	# not a get/set operation
-	error("Method name $AUTOLOAD is not in the recognized form (get|set)_attribute\n") and return 
-		unless ($operation && $attribute);
-	# no such attribute to get or add+set not enabled
-		error("No such attribute '$attribute' exists in the class " . ref($self)) and return
-			unless (exists $self->{$attribute} || $self->{auto_add} =~ REGEX_TRUE);
-	
-	
-	# handle operation & define sub for future use
-	if (lc $operation eq 'get') {
-		# temporarily disable strict refs to alter symbol table
-		{	
-			no strict 'refs';
-			*{$AUTOLOAD} = sub {return shift->{$attribute}};
-		}
-		return $self->{$attribute};
-	}
-	elsif (lc $operation eq 'set') {
-		{
-			no strict 'refs';
-			*{$AUTOLOAD} = sub {return shift->{$attribute} = shift};
-		}
-		return $self->{$attribute} = $args[0];
-	}
-	
-}
-
-# empty DESTROY to avoid AUTOLOAD call
-sub DESTROY {}
 
 # end script, begin POD
 __END__
